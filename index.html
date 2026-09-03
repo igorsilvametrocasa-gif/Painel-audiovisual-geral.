@@ -1467,10 +1467,27 @@
         <label for="ag-dlg-local">Local de gravação</label>
         <select id="ag-dlg-local" required></select>
       </div>
+      <div class="field span2">
+        <label for="ag-dlg-tel">WhatsApp da pessoa (opcional)</label>
+        <input type="tel" id="ag-dlg-tel" placeholder="Ex.: (11) 91234-5678">
+        <p class="help">Preenchendo, depois de confirmar aparece um link pronto pra mandar a confirmação no WhatsApp dela.</p>
+      </div>
     </div>
     <div class="actions">
       <button class="btn" value="ok" id="ag-dlg-ok">Confirmar</button>
       <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlg-agenda-whats">
+  <form method="dialog" class="dlgbody">
+    <h3>Gravação confirmada</h3>
+    <p class="sub" id="ag-whats-resumo"></p>
+    <p class="help" id="ag-whats-preview" style="white-space:pre-wrap;background:var(--surface-2);border-radius:var(--r-sm);padding:10px 12px;margin:10px 0"></p>
+    <div class="actions">
+      <a class="btn" id="ag-whats-link" target="_blank" rel="noopener">Enviar confirmação no WhatsApp</a>
+      <button class="btn ghost" value="ok">Fechar</button>
     </div>
   </form>
 </dialog>
@@ -3348,11 +3365,15 @@
       AGENDA_LOCAIS.map(function (x) { return '<option value="' + x.k + '">' + esc(x.n) + '</option>'; }).join("");
 
     $("#ag-dlg-aviso").innerHTML = "";
+    $("#ag-dlg-tel").value = "";
     $("#dlg-agenda").dataset.data = isoData;
     $("#dlg-agenda").showModal();
   }
 
-  $("#ag-dlg-pessoa").addEventListener("change", atualizarAvisoAgenda);
+  $("#ag-dlg-pessoa").addEventListener("change", function () {
+    atualizarAvisoAgenda();
+    $("#ag-dlg-tel").value = telefoneConhecido(this.value);
+  });
   function atualizarAvisoAgenda() {
     var p = mAgendaPessoa[$("#ag-dlg-pessoa").value];
     var el = $("#ag-dlg-aviso");
@@ -3376,16 +3397,45 @@
     var pid = $("#ag-dlg-pessoa").value, av = $("#ag-dlg-av").value, loc = $("#ag-dlg-local").value;
     var p = mAgendaPessoa[pid];
     if (!p || !av || !loc || !data) return;   /* rede de segurança — o "required" dos selects já bloqueia isso */
+    var telefone = $("#ag-dlg-tel").value.trim();
     var novo = {
       id: "bk" + Date.now() + Math.random().toString(36).slice(2, 6),
       personId: p.id, nome: p.nome, grupo: p.grupo, respTitulo: p.respTitulo, respNome: p.respNome,
-      avNome: av, dateISO: data, location: loc, createdAt: new Date().toISOString()
+      avNome: av, dateISO: data, location: loc, telefone: telefone, createdAt: new Date().toISOString()
     };
     bookings.push(novo);
     save();
     sync("incluir-booking", { booking: novo });
     atualizarTudo();
+    if (telefone) abrirConfirmacaoWhats(novo);
   });
+
+  /* ---------- confirmação da gravação por WhatsApp ---------- */
+  /* lembra o último telefone usado pra essa pessoa, pra não digitar de novo toda vez */
+  function telefoneConhecido(personId) {
+    var anteriores = bookings.filter(function (b) { return b.personId === personId && b.telefone; })
+      .sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); });
+    return anteriores.length ? anteriores[0].telefone : "";
+  }
+  function linkWhats(telefone, texto) {
+    var digitos = String(telefone || "").replace(/\D/g, "");
+    if (!digitos) return null;
+    if (digitos.length <= 11) digitos = "55" + digitos;   /* assume DDI Brasil quando só vem DDD+número */
+    return "https://wa.me/" + digitos + "?text=" + encodeURIComponent(texto);
+  }
+  function abrirConfirmacaoWhats(b) {
+    var d = new Date(b.dateISO + "T00:00:00"), wd = d.getDay();
+    var dataLabel = DIAS_SEMANA_LONGOS[wd] + ", " + d.getDate() + " de " + MESES_LONGOS[d.getMonth()];
+    var local = (mAgendaLocal[b.location] || {}).n || b.location;
+    var texto = "Oi " + b.nome + "! Sua gravação com o audiovisual está confirmada para " + dataLabel +
+      ", em " + local + ". Responsável: " + b.avNome + ". Qualquer dúvida, chama aqui! 🎥";
+    var link = linkWhats(b.telefone, texto);
+    $("#ag-whats-resumo").textContent = b.nome + " — " + dataLabel + " — " + local;
+    $("#ag-whats-preview").textContent = texto;
+    if (link) { $("#ag-whats-link").href = link; $("#ag-whats-link").hidden = false; }
+    else { $("#ag-whats-link").hidden = true; }
+    $("#dlg-agenda-whats").showModal();
+  }
 
   function excluirBooking(id) {
     bookings = bookings.filter(function (b) { return b.id !== id; });
