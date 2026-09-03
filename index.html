@@ -1306,6 +1306,27 @@
     </div>
 
     <div class="card">
+      <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>Locais de gravação</h2>
+      <div class="scroll">
+        <table id="tbl-agenda-locais">
+          <thead><tr><th>Local</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <details class="legend" style="margin-top:14px">
+        <summary>+ Adicionar lugar</summary>
+        <div class="grid" style="margin-top:12px">
+          <div class="field span2"><label for="al-nome">Nome do local</label><input type="text" id="al-nome" placeholder="Ex.: Loja 4, Studio externo…"></div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="al-salvar">Adicionar</button>
+          <span class="flash" id="al-flash"></span>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
       <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="12" height="11" rx="2"/><path d="M15 10.5l6-3.2v9.4l-6-3.2"/></svg>Relatório de gravações</h2>
       <div class="tiles" id="ag-tiles"></div>
       <div class="legendgrid" style="margin-top:16px">
@@ -1600,7 +1621,7 @@
     mAgendaPessoa = {};
     AGENDA_PESSOAS.forEach(function (p) { mAgendaPessoa[p.id] = p; });
   }
-  var AGENDA_LOCAIS = [
+  var AGENDA_LOCAIS_BASE = [
     {k:'loja1', n:'Loja 1'},
     {k:'loja2', n:'Loja 2'},
     {k:'loja3', n:'Loja 3'},
@@ -1612,8 +1633,18 @@
     {k:'externa', n:'Externa'},
     {k:'empreendimento_metrocasa', n:'Empreendimento Metrocasa'}
   ];
+  /* locais extras cadastrados pelo próprio painel (aba Agenda → "+ Adicionar lugar"),
+     guardados à parte da lista base e somados a ela em recomputarLocais() — mesmo padrão de pessoasExtras */
+  var locaisExtras = [];
+  var AGENDA_LOCAIS = AGENDA_LOCAIS_BASE.slice();
+  var mAgendaLocal = {};
+  function recomputarLocais() {
+    AGENDA_LOCAIS = AGENDA_LOCAIS_BASE.concat(locaisExtras);
+    mAgendaLocal = {};
+    AGENDA_LOCAIS.forEach(function (x) { mAgendaLocal[x.k] = x; });
+  }
   recomputarPessoas();
-  var mAgendaLocal = {}; AGENDA_LOCAIS.forEach(function (x) { mAgendaLocal[x.k] = x; });
+  recomputarLocais();
   var DIAS_SEMANA = {0:"Dom",1:"Seg",2:"Ter",3:"Qua",4:"Qui",5:"Sex",6:"Sáb"};
   var DIAS_SEMANA_LONGOS = {0:"domingo",1:"segunda-feira",2:"terça-feira",3:"quarta-feira",4:"quinta-feira",5:"sexta-feira",6:"sábado"};
   var MESES_LONGOS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
@@ -1625,15 +1656,18 @@
 
   var K_JOBS = "mc_av_jobs_v2", K_CFG = "mc_av_cfg_v2", K_BOOKINGS = "mc_av_bookings_v1", K_PESSOAS_EXTRA = "mc_av_pessoas_extra_v1";
   var K_REFCU = "mc_av_refacoes_clickup_v1";
+  var K_LOCAIS_EXTRA = "mc_av_locais_extra_v1";
   function load(k, fb) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
 
   var jobs = load(K_JOBS, null);
   var cfg  = load(K_CFG, null);
   var bookings = (load(K_BOOKINGS, []) || []).map(function (b) { b.dateISO = String(b.dateISO || "").slice(0, 10); return b; });
   pessoasExtras = load(K_PESSOAS_EXTRA, []) || [];
+  locaisExtras = load(K_LOCAIS_EXTRA, []) || [];
   /* refações que vieram do ClickUp (tarefa entrou em "Ajuste solicitado") — ver garantirTarefasClickUp */
   var refacoesClickUp = load(K_REFCU, []) || [];
   recomputarPessoas();
+  recomputarLocais();
 
   if (!jobs) {
     jobs = (load("mc_av_jobs_v1", []) || []).map(function (j) {
@@ -1688,6 +1722,7 @@
       localStorage.setItem(K_BOOKINGS, JSON.stringify(bookings));
       localStorage.setItem(K_PESSOAS_EXTRA, JSON.stringify(pessoasExtras));
       localStorage.setItem(K_REFCU, JSON.stringify(refacoesClickUp));
+      localStorage.setItem(K_LOCAIS_EXTRA, JSON.stringify(locaisExtras));
     } catch (e) {}
   }
   var $ = function (s) { return document.querySelector(s); };
@@ -2827,8 +2862,10 @@
       }
       bookings = (d.bookings || []).map(function (b) { b.dateISO = String(b.dateISO || "").slice(0, 10); return b; });
       pessoasExtras = (d.pessoas || []).map(function (p) { p.custom = true; return p; });
+      locaisExtras = (d.locais || []).map(function (l) { l.custom = true; return l; });
       if (Array.isArray(d.refClickUp)) refacoesClickUp = d.refClickUp;
       recomputarPessoas();
+      recomputarLocais();
       save(); atualizarTudo();
       stat("Sincronizado: " + jobs.length + " lançamentos na planilha" +
         (jobs.length !== antes ? " (" + (jobs.length > antes ? "+" : "") + (jobs.length - antes) + ")" : "") + ".");
@@ -3299,6 +3336,42 @@
     removerPessoaExtra(id);
   });
 
+  function renderAgendaLocais() {
+    $("#tbl-agenda-locais tbody").innerHTML = AGENDA_LOCAIS.length ? AGENDA_LOCAIS.map(function (x) {
+      var acao = x.custom ? '<button type="button" class="btn ghost sm" data-rm-local="' + x.k + '">Remover</button>' : "";
+      return '<tr><td>' + esc(x.n) + '</td><td style="text-align:right">' + acao + '</td></tr>';
+    }).join("") : '<tr><td colspan="2" class="empty">Nenhum local cadastrado.</td></tr>';
+  }
+
+  function adicionarLocalExtra() {
+    var nome = ($("#al-nome").value || "").trim();
+    if (!nome) { flash("#al-flash", "Digite um nome.", true); $("#al-nome").focus(); return; }
+    var k = "loc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    var novoLocal = { k: k, n: nome, custom: true };
+    locaisExtras.push(novoLocal);
+    recomputarLocais();
+    save();
+    sync("incluir-local", { local: novoLocal });
+
+    $("#al-nome").value = "";
+    flash("#al-flash", nome + " adicionado.", false);
+    renderAgendaTudo();
+  }
+  $("#al-salvar").addEventListener("click", adicionarLocalExtra);
+
+  function removerLocalExtra(k) {
+    locaisExtras = locaisExtras.filter(function (x) { return x.k !== k; });
+    recomputarLocais();
+    save();
+    sync("excluir-local", { k: k });
+    renderAgendaTudo();
+  }
+  document.addEventListener("click", function (e) {
+    var k = e.target && e.target.dataset && e.target.dataset.rmLocal;
+    if (!k) return;
+    removerLocalExtra(k);
+  });
+
   function mesmoDiaAgenda(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
   function renderAgendaCalendario() {
@@ -3427,7 +3500,7 @@
     var d = new Date(b.dateISO + "T00:00:00"), wd = d.getDay();
     var dataLabel = DIAS_SEMANA_LONGOS[wd] + ", " + d.getDate() + " de " + MESES_LONGOS[d.getMonth()];
     var local = (mAgendaLocal[b.location] || {}).n || b.location;
-    var texto = "Oi " + b.nome + "! Sua gravação com o audiovisual está confirmada para " + dataLabel +
+    var texto = "Oi " + b.nome + "! Sua gravação com a equipe audiovisual está confirmada para " + dataLabel +
       ", em " + local + ". Responsável: " + b.avNome + ". Qualquer dúvida, chama aqui! 🎥";
     var link = linkWhats(b.telefone, texto);
     $("#ag-whats-resumo").textContent = b.nome + " — " + dataLabel + " — " + local;
@@ -3517,6 +3590,7 @@
 
   function renderAgendaTudo() {
     renderAgendaPessoas();
+    renderAgendaLocais();
     renderAgendaCalendario();
     renderAgendaRelatorio();
     renderAgendaLista();
